@@ -91,8 +91,12 @@ object PrettyPrinter {
       }
 
       def print(tree: global.Tree): String = {
-        val res = generatePrint(cleanTree(tree), sourceFile = None)
+        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
+        val in = new Indentation(defaultIndentationStep, initialIndentation)
+
+//        val res = generatePrint(cleanTree(tree), sourceFile = None)
 //        val res = generatePrint(tree, sourceFile = None)
+          val res = prettyPrinter.dispatchToPrinter(tree, PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
         res
       }
     }
@@ -111,6 +115,17 @@ object PrettyPrinter {
 
       def shutdown() =
         global.askShutdown()
+
+      override def print(tree: global.Tree): String = {
+        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
+        val in = new Indentation(defaultIndentationStep, initialIndentation)
+
+//        val res = this.reusingPrinter.dispatchToPrinter(cleanTree(tree), PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
+                val res = prettyPrinter.dispatchToPrinter(cleanTree(tree), PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
+        //        val res = generatePrint(cleanTree(tree), sourceFile = None)
+        //        val res = generatePrint(tree, sourceFile = None)
+        res
+      }
     }
 
     object TestGlobal extends TestGlobalSettings {
@@ -126,7 +141,7 @@ object PrettyPrinter {
 
 //    printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
     val res = TestGlobal.print(tree.asInstanceOf[TestGlobal.global.Tree])
-    TestInterGlobal.shutdown()
+//    TestInterGlobal.shutdown()
     res
   }
 
