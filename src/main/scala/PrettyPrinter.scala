@@ -3,6 +3,7 @@ package ch.epfl.lamp.sprintertest
 import scala.reflect.api.Universe
 import scala.sprinter.printers.PrettyPrinters
 
+import scala.tools.nsc
 import scala.tools.nsc._
 import scala.tools.nsc.util._
 import scala.tools.nsc.reporters._
@@ -39,47 +40,116 @@ object PrettyPrinter {
     new Global(settings, reporter)
   }
 
+  def getCompiler = global
+
+  def getInteractiveCompiler(global: nsc.Global) = {
+    val comp = new nsc.interactive.Global(global.settings, global.reporter)
+    try {
+      comp.ask { () =>
+        new comp.Run
+      }
+    } catch {
+      case e: MissingRequirementError =>
+        val msg = s"""Could not initialize the compiler!""".stripMargin
+        throw new Exception(msg, e)
+    }
+    comp
+  }
+
   val printers = PrettyPrinters(global)
+
+
    
   def show(tree: global.Tree, unit: Context#CompilationUnit): String = {
-          val compiler = global
 
-          object RefObj extends Refactoring with CompilerAccess {
-            val global = compiler
-            def compilationUnitOfFile(f: AbstractFile) = Option(unit.asInstanceOf[global.CompilationUnit])
-//            override def print(t: global.Tree, pc: PrintingContext) = {
-//
-//              val test1 = t != null
-//              val test2 = !isEmptyTree(t)
-//              val test3 = t.pos == global.NoPosition
-//              val test4 = t.pos
-//              println("test1 = " + test1)
-//              println("test2 = " + test2)
-//              println("test3 = " + test3)
-//              println("test4 = " + test4)
+    trait TestGlobalSettings extends Refactoring with CompilerAccess {
+      val global: nsc.Global
+      import global._
 
-//              //val printed = reusingPrinter.dispatchToPrinter(t.asInstanceOf[this.global.Tree], pc.asInstanceOf[this.PrintingContext])t
-//                val printed = prettyPrinter.dispatchToPrinter(t.asInstanceOf[this.global.Tree], pc.asInstanceOf[this.PrintingContext])
-////              val printed = super.print(t, pc)
-//              val test5 = t.pos.isRange
-//              System.out.println("test5 = " + test5)
-//              printed
-//            }
-          }
+      def cleanTree(t: global.Tree) = {
+        //global.ask{ () =>
+        val removeAuxiliaryTrees = ↓(transform {
+          case t: global.Tree if (t.pos == global.NoPosition || t.pos.isRange) => t
+          case t: global.ValDef => global.emptyValDef
+          // We want to exclude "extends AnyRef" in the pretty printer tests
+          case t: global.Select if t.name.isTypeName && t.name.toString != "AnyRef" => t
+          case t => global.EmptyTree
+        })
 
-          val initialIndentation = ""
-          val in = new RefObj.Indentation(RefObj.defaultIndentationStep, initialIndentation)
+        (removeAuxiliaryTrees &> topdown(setNoPosition))(t).get
+        //}
+      }
 
-          object AllTreesNotChanged extends RefObj.ChangeSet {
-            def hasChanged(t: RefObj.global.Tree) = false
-          }
-          val printingContext = RefObj.PrintingContext(in, RefObj.AllTreesHaveChanged, tree.asInstanceOf[RefObj.global.Tree], None)
-          
-          //RefObj.print(tree.asInstanceOf[RefObj.global.Tree], printingContext).asText
-          RefObj.prettyPrinter.dispatchToPrinter(tree.asInstanceOf[RefObj.global.Tree], printingContext).asText
-//          RefObj.reusingPrinter.dispatchToPrinter(tree.asInstanceOf[RefObj.global.Tree], printingContext).asText
-//          RefObj.createText(tree.asInstanceOf[RefObj.global.Tree])
+      def compilationUnitOfFile(f: AbstractFile): Option[global.CompilationUnit] = Option(unit.asInstanceOf[global.CompilationUnit])
 
-//        printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
+      def generatePrint(tree: Tree, changeset: ChangeSet = AllTreesHaveChanged, sourceFile: Option[scala.reflect.internal.util.SourceFile]): String = {
+
+        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
+        val in = new Indentation(defaultIndentationStep, initialIndentation)
+        //            scala.sprinter.printers.PrettyPrinters.apply(global).show(tree)
+        print(tree, PrintingContext(in, changeset, tree, sourceFile)).asText
+      }
+
+      def print(tree: global.Tree): String = {
+        val res = generatePrint(cleanTree(tree), sourceFile = None)
+//        val res = generatePrint(tree, sourceFile = None)
+        res
+      }
+    }
+
+    trait TestInterGlobalSettings extends TestGlobalSettings {
+      val global: nsc.interactive.Global
+
+
+//      val testTree = treeFrom(sourceStr)
+
+      override def cleanTree(t: global.Tree) = {
+        global.ask{ () =>
+          super.cleanTree(t)
+        }
+      }
+
+      def shutdown() =
+        global.askShutdown()
+    }
+
+    object TestGlobal extends TestGlobalSettings {
+      val global = getCompiler
+    }
+
+    object TestInterGlobal extends TestInterGlobalSettings {
+      val global: nsc.interactive.Global = getInteractiveCompiler(getCompiler)
+
+      val file = new scala.reflect.internal.util.BatchSourceFile("fileName", sourceStr)
+      val testTree = global.parseTree(file)
+    }
+
+//    printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
+    val res = TestGlobal.print(tree.asInstanceOf[TestGlobal.global.Tree])
+    TestInterGlobal.shutdown()
+    res
   }
+
+  val sourceStr = """
+      case class Test {
+        import scala.collection.mutable
+
+//        val (x, y) = (5, "ggg")
+//
+//        val List(a, _*) = List(1,2,3)
+
+        val z: List[Int] = null
+        val f = List(1,2,3)
+        z match {
+          case Nil => println("1")
+          case List(x) => x
+          case List(x,y) => y
+          case List(x,y,z) => z
+          case List(x, _*) => x
+          case _ =>
+        }
+
+        val x: mutable.Map[Int, Int] = null
+      }
+                  """
 }
