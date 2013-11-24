@@ -57,17 +57,32 @@ object PrettyPrinter {
   }
 
   val printers = PrettyPrinters(global)
-
-
    
   def show(tree: global.Tree, unit: Context#CompilationUnit): String = {
 
-    trait TestGlobalSettings extends Refactoring with CompilerAccess {
+    trait GlobalRefCompiler extends Refactoring with CompilerAccess {
       val global: nsc.Global
       import global._
 
+      def compilationUnitOfFile(f: AbstractFile): Option[global.CompilationUnit] = Option(unit.asInstanceOf[global.CompilationUnit])
+
+      def generatePrint(tree: Tree, changeset: ChangeSet = AllTreesHaveChanged, sourceFile: Option[scala.reflect.internal.util.SourceFile]): String = {
+        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
+        val in = new Indentation(defaultIndentationStep, initialIndentation)
+        //scala.sprinter.printers.PrettyPrinters.apply(global).show(tree)
+        print(tree, PrintingContext(in, changeset, tree, sourceFile)).asText
+      }
+
+      def print(tree: global.Tree): String = {
+        generatePrint(tree, sourceFile = None)
+      }
+    }
+
+    trait InterRefCompiler extends GlobalRefCompiler {
+      val global: nsc.interactive.Global
+
       def cleanTree(t: global.Tree) = {
-        //global.ask{ () =>
+        global.ask{ () =>
         val removeAuxiliaryTrees = ↓(transform {
           case t: global.Tree if (t.pos == global.NoPosition || t.pos.isRange) => t
           case t: global.ValDef => global.emptyValDef
@@ -77,39 +92,6 @@ object PrettyPrinter {
         })
 
         (removeAuxiliaryTrees &> topdown(setNoPosition))(t).get
-        //}
-      }
-
-      def compilationUnitOfFile(f: AbstractFile): Option[global.CompilationUnit] = Option(unit.asInstanceOf[global.CompilationUnit])
-
-      def generatePrint(tree: Tree, changeset: ChangeSet = AllTreesHaveChanged, sourceFile: Option[scala.reflect.internal.util.SourceFile]): String = {
-
-        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
-        val in = new Indentation(defaultIndentationStep, initialIndentation)
-        //            scala.sprinter.printers.PrettyPrinters.apply(global).show(tree)
-        print(tree, PrintingContext(in, changeset, tree, sourceFile)).asText
-      }
-
-      def print(tree: global.Tree): String = {
-        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
-        val in = new Indentation(defaultIndentationStep, initialIndentation)
-
-//        val res = generatePrint(cleanTree(tree), sourceFile = None)
-//        val res = generatePrint(tree, sourceFile = None)
-          val res = prettyPrinter.dispatchToPrinter(tree, PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
-        res
-      }
-    }
-
-    trait TestInterGlobalSettings extends TestGlobalSettings {
-      val global: nsc.interactive.Global
-
-
-//      val testTree = treeFrom(sourceStr)
-
-      override def cleanTree(t: global.Tree) = {
-        global.ask{ () =>
-          super.cleanTree(t)
         }
       }
 
@@ -120,51 +102,24 @@ object PrettyPrinter {
         val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
         val in = new Indentation(defaultIndentationStep, initialIndentation)
 
-//        val res = this.reusingPrinter.dispatchToPrinter(cleanTree(tree), PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
-                val res = prettyPrinter.dispatchToPrinter(cleanTree(tree), PrintingContext(in, AllTreesHaveChanged, tree, None)).asText
-        //        val res = generatePrint(cleanTree(tree), sourceFile = None)
-        //        val res = generatePrint(tree, sourceFile = None)
+        val res = generatePrint(cleanTree(tree), sourceFile = None)
+        //val res = generatePrint(tree, sourceFile = None)
         res
       }
     }
 
-    object TestGlobal extends TestGlobalSettings {
+    object GlobalRefInstance extends GlobalRefCompiler {
       val global = getCompiler
     }
 
-    object TestInterGlobal extends TestInterGlobalSettings {
+    object InterRefGlobal extends InterRefCompiler {
       val global: nsc.interactive.Global = getInteractiveCompiler(getCompiler)
-
-      val file = new scala.reflect.internal.util.BatchSourceFile("fileName", sourceStr)
-      val testTree = global.parseTree(file)
     }
 
-//    printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
-    val res = TestGlobal.print(tree.asInstanceOf[TestGlobal.global.Tree])
-//    TestInterGlobal.shutdown()
+//    val res = printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
+    val res = GlobalRefInstance.print(tree.asInstanceOf[GlobalRefInstance.global.Tree])
+    InterRefGlobal.shutdown()
     res
   }
 
-  val sourceStr = """
-      case class Test {
-        import scala.collection.mutable
-
-//        val (x, y) = (5, "ggg")
-//
-//        val List(a, _*) = List(1,2,3)
-
-        val z: List[Int] = null
-        val f = List(1,2,3)
-        z match {
-          case Nil => println("1")
-          case List(x) => x
-          case List(x,y) => y
-          case List(x,y,z) => z
-          case List(x, _*) => x
-          case _ =>
-        }
-
-        val x: mutable.Map[Int, Int] = null
-      }
-                  """
 }
