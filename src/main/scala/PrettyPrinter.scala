@@ -12,7 +12,7 @@ import java.io._
 import scala.reflect.macros.Context
 
 import scala.tools.refactoring.Refactoring
-import scala.tools.refactoring.common.CompilerAccess
+import scala.tools.refactoring.common.{Tracing, CompilerAccess}
 import scala.reflect.io.AbstractFile
 import scala.tools.refactoring.sourcegen.ReusingPrinter
 
@@ -69,7 +69,7 @@ object PrettyPrinter {
       def generatePrint(tree: Tree, changeset: ChangeSet = AllTreesHaveChanged, sourceFile: Option[scala.reflect.internal.util.SourceFile]): String = {
         val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
         val in = new Indentation(defaultIndentationStep, initialIndentation)
-        //scala.sprinter.printers.PrettyPrinters.apply(global).show(tree)
+
         print(tree, PrintingContext(in, changeset, tree, sourceFile)).asText
       }
 
@@ -86,7 +86,7 @@ object PrettyPrinter {
         val removeAuxiliaryTrees = ↓(transform {
           case t: global.Tree if (t.pos == global.NoPosition || t.pos.isRange) => t
           case t: global.ValDef => global.emptyValDef
-          // We want to exclude "extends AnyRef" in the pretty printer tests
+
           case t: global.Select if t.name.isTypeName && t.name.toString != "AnyRef" => t
           case t => global.EmptyTree
         })
@@ -99,12 +99,7 @@ object PrettyPrinter {
         global.askShutdown()
 
       override def print(tree: global.Tree): String = {
-        val initialIndentation = if(tree.hasExistingCode) indentationString(tree) else ""
-        val in = new Indentation(defaultIndentationStep, initialIndentation)
-
-        val res = generatePrint(cleanTree(tree), sourceFile = None)
-        //val res = generatePrint(tree, sourceFile = None)
-        res
+        generatePrint(cleanTree(tree), sourceFile = None)
       }
     }
 
@@ -112,13 +107,12 @@ object PrettyPrinter {
       val global = getCompiler
     }
 
-    object InterRefGlobal extends InterRefCompiler {
+    object InterRefInstance extends InterRefCompiler {
       val global: nsc.interactive.Global = getInteractiveCompiler(getCompiler)
     }
 
-//    val res = printers.show(tree.asInstanceOf[Global#Tree], PrettyPrinters.AFTER_NAMER)
-    val res = GlobalRefInstance.print(tree.asInstanceOf[GlobalRefInstance.global.Tree])
-    InterRefGlobal.shutdown()
+    val res = InterRefInstance.print(tree.asInstanceOf[InterRefInstance.global.Tree])
+    InterRefInstance.shutdown()
     res
   }
 
