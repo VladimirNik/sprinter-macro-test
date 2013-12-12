@@ -1,7 +1,7 @@
-scalaVersion := "2.10.2"
+scalaVersion := "2.11.0-M7"
 
 name := "Sprinter Test"
 
-libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _)
+scalaHome := Some(file("/home/vova/scala-projects/GSoC/scala/scala/build/pack"))
 
-libraryDependencies += "org.scala-lang" %% "sprinter" % "0.2.0"
+libraryDependencies <+= scalaVersion("org.scala-lang" % "scala-compiler" % _)
